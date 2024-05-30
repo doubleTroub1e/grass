@@ -1,23 +1,22 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
-
+from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.core.os_manager import ChromeType
-
-from selenium.common.exceptions import WebDriverException, NoSuchDriverException
-
+from selenium.common.exceptions import WebDriverException, NoSuchDriverException, TimeoutException, NoSuchElementException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import time
 import requests
 import os
 import re
-import base64
-from flask import Flask
-import hashlib
-import sys
+from flask import Flask, jsonify
 
-extensionId = 'ilehaonighjijnmpnagapkhpcdbhclfg'
-CRX_URL = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=98.0.4758.102&acceptformat=crx2,crx3&x=id%3D~~~~%26uc&nacl_arch=x86-64"
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"
+# Example usage
+chrome_version = '124.0.6367.78'
+extension_id = 'ilehaonighjijnmpnagapkhpcdbhclfg'  # Replace with the actual extension ID
+output_file = "extension.crx"
+
 
 try:
     USER = os.environ['GRASS_USER']
@@ -45,17 +44,19 @@ if ALLOW_DEBUG == True:
 
 
 #https://gist.github.com/ckuethe/fb6d972ecfc590c2f9b8
-def download_extension(extension_id):
-    url = CRX_URL.replace("~~~~", extension_id)
-    headers = {"User-Agent": USER_AGENT}
-    r = requests.get(url, stream=True, headers=headers)
-    with open("grass.crx", "wb") as fd:
-        for chunk in r.iter_content(chunk_size=128):
-            fd.write(chunk)
-    if ALLOW_DEBUG == True:
-        #generate md5 of file
-        md5 = hashlib.md5(open('grass.crx', 'rb').read()).hexdigest()
-        print('Extension MD5: ' + md5)
+def download_crx(extension_id, output_file, chrome_version):
+    url_template = "https://clients2.google.com/service/update2/crx?response=redirect&prodversion={}&acceptformat=crx2,crx3&x=id%3D{}%26uc"
+    url = url_template.format(chrome_version, extension_id)
+    headers = {
+        'User-Agent': f"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{chrome_version} Safari/537.36"
+    }
+    response = requests.get(url, headers=headers, allow_redirects=True, stream=True)
+    if response.status_code == 200:
+        with open(output_file, 'wb') as file:
+            file.write(response.content)
+        print(f"Extension {extension_id} has been downloaded as {output_file}.")
+    else:
+        print(f"Failed to download the extension. Status code: {response.status_code}")
 
 
 
@@ -78,7 +79,7 @@ def generate_error_report(driver):
     print('Error report generated! Provide the above information to the developer for debugging purposes.')
 
 print('Downloading extension...')
-download_extension(extensionId)
+download_crx(extension_id, output_file, chrome_version)
 print('Downloaded! Installing extension and driver manager...')
 
 options = webdriver.ChromeOptions()
@@ -103,7 +104,11 @@ except (WebDriverException, NoSuchDriverException) as e:
         exit()
 
 #driver.get('chrome-extension://'+extensionId+'/index.html')
+def set_desktop_resolution(driver, width=1024, height=768):
+    driver.set_window_size(width, height)
+
 print('Started! Logging in...')
+set_desktop_resolution(driver, 1024, 768)
 driver.get('https://app.getgrass.io/')
 
 sleep = 0
@@ -152,7 +157,7 @@ while True:
             exit()
 
 print('Logged in! Waiting for connection...')
-driver.get('chrome-extension://'+extensionId+'/index.html')
+driver.get('chrome-extension://'+extension_id+'/index.html')
 sleep = 0
 while True:
     try:
